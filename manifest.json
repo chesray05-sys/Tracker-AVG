@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smoke Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#111112" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Smoke Tracker" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=IBM+Plex+Sans:wght@300;400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #111112;
+      --surface: #1a1a1c;
+      --border: #2a2a2e;
+      --text: #d4d4d8;
+      --muted: #52525b;
+      --accent: #a1a1aa;
+      --good: #4ade80;
+      --warn: #facc15;
+      --bad: #f87171;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .header-right { display: flex; gap: 0.5rem; align-items: center; }
+
+    .clear-btn, .undo-btn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      background: none;
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.7rem;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .clear-btn:hover { color: var(--bad); border-color: var(--bad); }
+    .undo-btn:hover  { color: var(--warn); border-color: var(--warn); }
+    .undo-btn:disabled { opacity: 0.25; pointer-events: none; }
+
+    /* ── Average block ── */
+    .avg-block {
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+    .avg-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    .avg-number {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 4.5rem;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      transition: color 0.4s;
+    }
+    .avg-unit {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      letter-spacing: 0.1em;
+    }
+
+    /* target — hold to edit */
+    .target-line {
+      position: absolute;
+      top: 1.2rem;
+      right: 1.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-align: right;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .target-line span {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--accent);
+      margin-top: 0.2rem;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .target-line span:hover { color: var(--text); }
+    .target-hint {
+      font-size: 0.55rem;
+      color: var(--muted);
+      opacity: 0.6;
+      margin-top: 0.15rem;
+      letter-spacing: 0.05em;
+    }
+
+    /* streak badge */
+    .streak-badge {
+      position: absolute;
+      bottom: 1.4rem;
+      right: 1.5rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-align: right;
+    }
+    .streak-badge .streak-num {
+      display: block;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--good);
+      margin-top: 0.1rem;
+    }
+    .streak-badge.hidden { display: none; }
+
+    /* status bar */
+    .status-bar {
+      width: 100%;
+      max-width: 480px;
+      height: 3px;
+      background: var(--border);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .status-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.5s ease, background 0.4s;
+    }
+
+    /* stats row */
+    .stats-row {
+      width: 100%;
+      max-width: 480px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      margin-bottom: 1.5rem;
+    }
+    .stat { background: var(--surface); padding: 1rem; }
+    .stat-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .stat-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    /* buttons */
+    .new-btn {
+      width: 100%;
+      max-width: 480px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 400;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 1.2rem;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s, color 0.2s;
+      margin-bottom: 0.6rem;
+    }
+    .new-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--text);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.25s ease;
+      z-index: 0;
+    }
+    .new-btn:hover::before { transform: scaleX(1); }
+    .new-btn:hover { color: var(--bg); }
+    .new-btn span { position: relative; z-index: 1; }
+    .new-btn:active { opacity: 0.7; }
+
+    .custom-btn {
+      width: 100%;
+      max-width: 480px;
+      background: none;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 0.7rem;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      margin-bottom: 1.5rem;
+    }
+    .custom-btn:hover { color: var(--text); border-color: var(--accent); }
+    .custom-btn:active { opacity: 0.7; }
+
+    /* log */
+    .log-header {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: space-between;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.75rem;
+    }
+    .log-header span {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .log-entry {
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1px;
+      animation: fadeIn 0.3s ease;
+      flex-wrap: wrap;
+      gap: 0;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .entry-row1 {
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+    .entry-index {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      width: 2.2rem;
+      flex-shrink: 0;
+    }
+    .entry-date {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+      flex: 1;
+      padding-left: 0.4rem;
+    }
+    .entry-time {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+    .entry-gap {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      padding-left: 0.75rem;
+      min-width: 4.5rem;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    /* avg-at-log line */
+    .entry-avg {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--muted);
+      padding-left: 2.6rem;
+      margin-top: 0.25rem;
+      width: 100%;
+      letter-spacing: 0.05em;
+    }
+    .entry-avg .avg-val {
+      font-weight: 600;
+    }
+    .entry-grams {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--warn);
+      border: 1px solid var(--warn);
+      padding: 0.1rem 0.3rem;
+      margin-left: 0.4rem;
+      opacity: 0.85;
+      vertical-align: middle;
+    }
+
+    .empty-state {
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+      padding: 3rem 1rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      border: 1px dashed var(--border);
+    }
+
+    /* info tooltip for projection */
+    .info-row {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.75rem;
+      margin-top: -1rem;
+    }
+    .info-btn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.65rem;
+      width: 1.4rem;
+      height: 1.4rem;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+    .info-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .info-panel {
+      display: none;
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1rem 1.2rem;
+      margin-bottom: 1rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .info-panel.show { display: block; }
+    .info-panel .info-highlight {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* dialogs */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay.show { display: flex; }
+    .dialog {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      max-width: 320px;
+      width: 90%;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .dialog p {
+      font-size: 0.8rem;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .input-label {
+      display: block;
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .dialog input[type=number] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.8rem;
+      text-align: center;
+      padding: 0.75rem;
+      margin-bottom: 1.5rem;
+      outline: none;
+      -moz-appearance: textfield;
+    }
+    .dialog input[type=number]::-webkit-inner-spin-button,
+    .dialog input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    .dialog input[type=number]:focus { border-color: var(--accent); }
+    .dialog-btns { display: flex; gap: 0.75rem; }
+    .dialog-btns button {
+      flex: 1;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      padding: 0.7rem;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--text);
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-cancel:hover  { background: var(--border); }
+    .btn-danger  { border-color: var(--bad)  !important; color: var(--bad)  !important; }
+    .btn-danger:hover  { background: var(--bad);  color: var(--bg) !important; }
+    .btn-confirm { border-color: var(--accent) !important; color: var(--accent) !important; }
+    .btn-confirm:hover { background: var(--accent); color: var(--bg) !important; }
+
+    /* hold-to-edit target progress ring */
+    .target-line span.holding {
+      color: var(--warn);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Smoke Tracker</h1>
+  <div class="header-right">
+    <button class="undo-btn" id="undoBtn" onclick="undoLast()" disabled>UNDO</button>
+    <button class="clear-btn" onclick="showClear()">CLEAR ALL</button>
+  </div>
+</header>
+
+<div class="avg-block">
+  <div class="avg-label">Daily Average</div>
+  <div class="avg-number" id="avgNum">—</div>
+  <div class="avg-unit">grams / day</div>
+
+  <div class="target-line" id="targetLine">
+    target
+    <span id="targetVal">≤ 1.6 g</span>
+    <div class="target-hint">hold to edit</div>
+  </div>
+
+  <div class="streak-badge hidden" id="streakBadge">
+    streak
+    <span class="streak-num" id="streakNum">0</span>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-fill" id="statusFill"></div>
+</div>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="stat-label">Bags used</div>
+    <div class="stat-value" id="statBags">0</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total grams</div>
+    <div class="stat-value" id="statGrams">0 g</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Days tracked</div>
+    <div class="stat-value" id="statDays">0</div>
+  </div>
+</div>
+
+<button class="new-btn" id="newBagBtn" onclick="logBag(null)"><span id="newBagLabel">+ NEW BAG (5 g)</span></button>
+<button class="custom-btn" onclick="showCustom()">custom amount</button>
+
+<div class="info-row">
+  <button class="info-btn" id="infoBtn" onclick="toggleInfo()">i</button>
+</div>
+<div class="info-panel" id="infoPanel">
+  <span id="infoText">—</span>
+</div>
+
+<div class="log-header">
+  <span>Log</span>
+  <span id="logCount">0 entries</span>
+</div>
+
+<div id="logArea"></div>
+
+<!-- Custom amount dialog -->
+<div class="overlay" id="customOverlay">
+  <div class="dialog">
+    <label class="input-label" for="customGrams">Bag weight (grams)</label>
+    <input type="number" id="customGrams" min="0.1" step="0.1" placeholder="3" />
+    <div class="dialog-btns">
+      <button class="btn-cancel" onclick="hideCustom()">CANCEL</button>
+      <button class="btn-confirm" onclick="logCustom()">LOG</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit target dialog -->
+<div class="overlay" id="targetOverlay">
+  <div class="dialog">
+    <label class="input-label" for="targetInput">Daily target (grams)</label>
+    <input type="number" id="targetInput" min="0.1" step="0.1" placeholder="1.6" />
+    <div class="dialog-btns">
+      <button class="btn-cancel" onclick="hideTarget()">CANCEL</button>
+      <button class="btn-confirm" onclick="saveTarget()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Clear confirmation dialog -->
+<div class="overlay" id="clearOverlay">
+  <div class="dialog">
+    <p>Clear all log entries?<br>This cannot be undone.</p>
+    <div class="dialog-btns">
+      <button class="btn-cancel" onclick="hideClear()">CANCEL</button>
+      <button class="btn-danger" onclick="clearAll()">CLEAR</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var KEY        = 'smoke_tracker_v1';
+  var TARGET_KEY = 'smoke_tracker_target';
+  var TARGET     = parseFloat(localStorage.getItem(TARGET_KEY)) || 1.6;
+
+  // ── Storage ──
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch(e) { return []; }
+  }
+
+  function save(entries) {
+    localStorage.setItem(KEY, JSON.stringify(entries));
+  }
+
+  // ── Default bag size (last used custom, or 5) ──
+  var lastBagSize = 5;
+
+  // ── Log actions ──
+  function logBag(grams) {
+    if (grams === null) grams = lastBagSize;
+    var entries = load();
+    // calculate avg *before* this entry is added (snapshot)
+    var avgNow = calcAvgFromEntries(entries, Date.now());
+    entries.unshift({ ts: Date.now(), g: grams, avgSnap: avgNow });
+    save(entries);
+    render(entries);
+  }
+
+  function undoLast() {
+    var entries = load();
+    if (!entries.length) return;
+    entries.shift();
+    save(entries);
+    render(entries);
+  }
+
+  function showCustom() {
+    document.getElementById('customGrams').value = '';
+    document.getElementById('customOverlay').classList.add('show');
+    setTimeout(function(){ document.getElementById('customGrams').focus(); }, 50);
+  }
+  function hideCustom() {
+    document.getElementById('customOverlay').classList.remove('show');
+  }
+  function logCustom() {
+    var val = parseFloat(document.getElementById('customGrams').value);
+    if (!val || val <= 0) return;
+    lastBagSize = val;
+    document.getElementById('newBagLabel').textContent = '+ NEW BAG (' + val + ' g)';
+    hideCustom();
+    logBag(val);
+  }
+
+  function showClear() { document.getElementById('clearOverlay').classList.add('show'); }
+  function hideClear() { document.getElementById('clearOverlay').classList.remove('show'); }
+  function clearAll()  { save([]); hideClear(); lastBagSize = 5; document.getElementById('newBagLabel').textContent = '+ NEW BAG (5 g)'; render([]); }
+
+  // ── Target editing (hold to edit) ──
+  var holdTimer = null;
+  var targetEl  = document.getElementById('targetVal');
+
+  function startHold() {
+    targetEl.classList.add('holding');
+    holdTimer = setTimeout(function() {
+      targetEl.classList.remove('holding');
+      showTargetDialog();
+    }, 600);
+  }
+  function cancelHold() {
+    clearTimeout(holdTimer);
+    targetEl.classList.remove('holding');
+  }
+
+  targetEl.addEventListener('mousedown',   startHold);
+  targetEl.addEventListener('touchstart',  startHold, { passive: true });
+  targetEl.addEventListener('mouseup',     cancelHold);
+  targetEl.addEventListener('mouseleave',  cancelHold);
+  targetEl.addEventListener('touchend',    cancelHold);
+  targetEl.addEventListener('touchcancel', cancelHold);
+
+  function showTargetDialog() {
+    document.getElementById('targetInput').value = TARGET;
+    document.getElementById('targetOverlay').classList.add('show');
+    setTimeout(function(){ document.getElementById('targetInput').focus(); }, 50);
+  }
+  function hideTarget() {
+    document.getElementById('targetOverlay').classList.remove('show');
+  }
+  function saveTarget() {
+    var val = parseFloat(document.getElementById('targetInput').value);
+    if (!val || val <= 0) return;
+    TARGET = val;
+    localStorage.setItem(TARGET_KEY, TARGET);
+    targetEl.textContent = '≤ ' + TARGET + ' g';
+    hideTarget();
+    render(load());
+  }
+
+  // ── Info panel (projection) ──
+  var infoPanelOpen = false;
+  function toggleInfo() {
+    infoPanelOpen = !infoPanelOpen;
+    document.getElementById('infoPanel').classList.toggle('show', infoPanelOpen);
+  }
+
+  // ── Calculations ──
+  function calcAvgFromEntries(entries, atTime) {
+    if (!entries.length) return null;
+    var oldest = entries[entries.length - 1].ts;
+    var days   = Math.max((atTime - oldest) / 86400000, 1);
+    var total  = entries.reduce(function(s,e){ return s + e.g; }, 0);
+    return total / days;
+  }
+
+  function calcStreak(entries) {
+    // Count consecutive bags (from most recent) that were opened when avg <= TARGET
+    if (!entries.length) return 0;
+    var streak = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var snap = entries[i].avgSnap;
+      // first entry has no prior avg — count it if it's ≤ TARGET now or snap is null
+      if (snap === null || snap === undefined) { streak++; break; }
+      if (snap <= TARGET) { streak++; } else { break; }
+    }
+    return streak;
+  }
+
+  function projectionText(entries) {
+    if (!entries.length) return null;
+    var avg = calcAvgFromEntries(entries, Date.now());
+    if (avg === null) return null;
+    if (avg <= TARGET) {
+      return 'You are currently within target. Keep it up!';
+    }
+    // How many days until avg naturally drops to TARGET assuming no new bags?
+    // total / days = TARGET  →  days = total / TARGET
+    var total     = entries.reduce(function(s,e){ return s + e.g; }, 0);
+    var oldest    = entries[entries.length - 1].ts;
+    var daysNeeded = total / TARGET;  // total days from first bag
+    var msNeeded   = daysNeeded * 86400000;
+    var greenAt    = new Date(oldest + msNeeded);
+    var now        = Date.now();
+    var msLeft     = (oldest + msNeeded) - now;
+    if (msLeft <= 0) return 'You should be at target now — try refreshing.';
+    var hLeft = Math.floor(msLeft / 3600000);
+    var dLeft = Math.floor(hLeft / 24);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var dateStr = greenAt.getDate() + ' ' + months[greenAt.getMonth()] + ' at '
+      + String(greenAt.getHours()).padStart(2,'0') + ':' + String(greenAt.getMinutes()).padStart(2,'0');
+    if (dLeft >= 1) {
+      return 'Next green light in ~' + dLeft + 'd ' + (hLeft % 24) + 'h — ' + dateStr;
+    }
+    return 'Next green light in ~' + hLeft + 'h — ' + dateStr;
+  }
+
+  // ── Date formatting ──
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmt(ts) {
+    var d  = new Date(ts);
+    var day  = String(d.getDate()).padStart(2, '0');
+    var mon  = MONTHS[d.getMonth()];
+    var year = d.getFullYear();
+    var hh   = String(d.getHours()).padStart(2, '0');
+    var mm   = String(d.getMinutes()).padStart(2, '0');
+    return { date: day + ' ' + mon + ' ' + year, time: hh + ':' + mm };
+  }
+
+  function gapStr(ms) {
+    var h = Math.floor(ms / 3600000);
+    var m = Math.floor((ms % 3600000) / 60000);
+    if (h > 48) return Math.round(h/24) + 'd gap';
+    if (h > 0)  return '+' + h + 'h ' + m + 'm';
+    return '+' + m + 'm';
+  }
+
+  // ── Render ──
+  function render(entries) {
+    var avg   = calcAvgFromEntries(entries, Date.now());
+    var avgEl = document.getElementById('avgNum');
+    var fill  = document.getElementById('statusFill');
+
+    if (avg === null) {
+      avgEl.textContent = '—';
+      avgEl.style.color = 'var(--accent)';
+      fill.style.width  = '0%';
+    } else {
+      avgEl.textContent = avg.toFixed(2);
+      var color = avg > TARGET * 1.15 ? 'var(--bad)' : avg > TARGET ? 'var(--warn)' : 'var(--good)';
+      avgEl.style.color     = color;
+      fill.style.width      = Math.min(avg / TARGET * 100, 100) + '%';
+      fill.style.background = color;
+    }
+
+    // streak
+    var streak      = calcStreak(entries);
+    var streakBadge = document.getElementById('streakBadge');
+    var streakNum   = document.getElementById('streakNum');
+    if (streak >= 2) {
+      streakBadge.classList.remove('hidden');
+      streakNum.textContent = streak + ' bags';
+    } else {
+      streakBadge.classList.add('hidden');
+    }
+
+    // undo button
+    document.getElementById('undoBtn').disabled = entries.length === 0;
+
+    // stats
+    var total = entries.reduce(function(s,e){ return s + e.g; }, 0);
+    var days  = entries.length
+      ? Math.max(Math.ceil((Date.now() - entries[entries.length-1].ts) / 86400000), 1)
+      : 0;
+    document.getElementById('statBags').textContent  = entries.length;
+    document.getElementById('statGrams').textContent = total + ' g';
+    document.getElementById('statDays').textContent  = days;
+    document.getElementById('logCount').textContent  =
+      entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies');
+
+    // target display
+    document.getElementById('targetVal').textContent = '≤ ' + TARGET + ' g';
+
+    // info panel
+    var proj = projectionText(entries);
+    if (proj) document.getElementById('infoText').textContent = proj;
+
+    // log entries
+    var area = document.getElementById('logArea');
+    if (!entries.length) {
+      area.innerHTML = '<div class="empty-state">No bags logged yet.<br>Press + NEW BAG to start.</div>';
+      return;
+    }
+
+    area.innerHTML = '';
+    entries.forEach(function(entry, i) {
+      var f      = fmt(entry.ts);
+      var prev   = entries[i + 1];
+      var bagNum = entries.length - i;
+      var badge  = (entry.g !== lastBagSize && entry.g !== 5)
+        ? '<span class="entry-grams">' + entry.g + 'g</span>'
+        : '';
+
+      // avg snapshot line
+      var avgLine = '';
+      if (entry.avgSnap !== null && entry.avgSnap !== undefined) {
+        var snapColor = entry.avgSnap > TARGET ? 'var(--bad)' : 'var(--good)';
+        avgLine = '<div class="entry-avg">avg when opened: <span class="avg-val" style="color:' + snapColor + '">'
+          + entry.avgSnap.toFixed(2) + ' g/day</span></div>';
+      } else {
+        avgLine = '<div class="entry-avg" style="color:var(--muted);opacity:0.4">first entry</div>';
+      }
+
+      var div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML =
+        '<div class="entry-row1">' +
+          '<span class="entry-index">#' + bagNum + '</span>' +
+          '<span class="entry-date">' + f.date + badge + '</span>' +
+          '<span class="entry-time">' + f.time + '</span>' +
+          '<span class="entry-gap">' + (prev ? gapStr(entry.ts - prev.ts) : '') + '</span>' +
+        '</div>' +
+        avgLine;
+      area.appendChild(div);
+    });
+  }
+
+  // ── Keyboard shortcuts ──
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { hideCustom(); hideClear(); hideTarget(); }
+    if (e.key === 'Enter') {
+      if (document.getElementById('customOverlay').classList.contains('show')) logCustom();
+      if (document.getElementById('targetOverlay').classList.contains('show')) saveTarget();
+    }
+  });
+
+  // ── Service Worker ──
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js');
+    });
+  }
+
+  // ── Init ──
+  // Pre-seed historical data if storage is empty
+  (function seedIfEmpty() {
+    var existing = load();
+    if (existing.length === 0) {
+      var seed = [
+        {"ts":1779896880000,"g":5,"avgSnap":1.691},
+        {"ts":1779647820000,"g":5,"avgSnap":1.682},
+        {"ts":1779391920000,"g":5,"avgSnap":1.680},
+        {"ts":1779059160000,"g":5,"avgSnap":1.914},
+        {"ts":1779054720000,"g":2,"avgSnap":1.608},
+        {"ts":1778833320000,"g":5,"avgSnap":1.368},
+        {"ts":1778517420000,"g":5,"avgSnap":null}
+      ];
+      save(seed);
+    }
+  })();
+  render(load());
+</script>
+</body>
+</html>
